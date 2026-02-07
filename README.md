@@ -6,8 +6,8 @@ High-performance benchmark system for testing MQTT request-response patterns at 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         VIRTUAL CLIENT MULTIPLEXING                          │
-│                                                                              │
+│                         VIRTUAL CLIENT MULTIPLEXING                         │
+│                                                                             │
 │   ┌─────────────┐         ┌─────────────┐         ┌─────────────┐           │
 │   │  LOADGEN-V2 │         │    EMQX     │         │  WORKER-V2  │           │
 │   │             │         │   BROKER    │         │             │           │
@@ -16,7 +16,7 @@ High-performance benchmark system for testing MQTT request-response patterns at 
 │   │             │◄─resp── │  workers/   │◄─resp── │  (10 subs)  │           │
 │   │ 100 Conns   │         │             │         │ Auto-scale  │           │
 │   └─────────────┘         └─────────────┘         └─────────────┘           │
-│                                                                              │
+│                                                                             │
 │   Multiplexing Ratio: 1 connection : 10,000 virtual clients                 │
 │   Total Connections: 120 (100 loadgen + 10 pub + 10 sub)                    │
 └─────────────────────────────────────────────────────────────────────────────┘
