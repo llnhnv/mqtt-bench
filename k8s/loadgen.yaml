@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: mqtt-bench
+spec:
+  replicas: 10  # 10 × 100k = 1M virtual clients
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: mqtt-rr-bench-loadgen-v2:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BROKER
+              value: "tcp://emqx.mqtt-bench.svc.cluster.local:1883"
+            - name: VIRTUAL_CLIENTS
+              value: "100000"  # 100k per instance
+            - name: CONNECTIONS
+              value: "100"
+            - name: SHARDS
+              value: "256"
+            - name: INTERVAL_MS
+              value: "5000"
+            - name: MAX_INFLIGHT_PER_CLIENT
+              value: "1"
+            - name: PUBLISH_WORKERS
+              value: "20"
+            - name: BATCH_SIZE
+              value: "500"
+            - name: USE_SHARED_SUB
+              value: "true"
+            - name: WARMUP_SEC
+              value: "10"
+            - name: INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - containerPort: 8090
+              name: metrics
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "500m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadgen
+  namespace: mqtt-bench
+spec:
+  selector:
+    app: loadgen
+  ports:
+    - name: metrics
+      port: 8090
+      targetPort: 8090

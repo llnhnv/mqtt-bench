@@ -1,0 +1,76 @@
+# Lightweight Worker for kind cluster
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: mqtt-bench
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: mqtt-rr-bench-worker-v2:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MQTT_BROKER
+              value: "tcp://emqx.mqtt-bench.svc.cluster.local:1883"
+            - name: MQTT_SUB
+              value: "req/+"
+            - name: CONNECTIONS
+              value: "5"
+            - name: MIN_WORKERS
+              value: "5"
+            - name: MAX_WORKERS
+              value: "200"
+            - name: QUEUE_CAP
+              value: "10000"
+            - name: SCALE_UP_THRESHOLD
+              value: "0.7"
+            - name: SCALE_DOWN_THRESHOLD
+              value: "0.2"
+            - name: MODE
+              value: "health"
+            - name: DROP_ON_FULL
+              value: "true"
+          ports:
+            - containerPort: 8080
+              name: metrics
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: mqtt-bench
+spec:
+  selector:
+    app: worker
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080

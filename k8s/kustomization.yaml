@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mqtt-bench
+
+resources:
+  - namespace.yaml
+  - emqx-cluster.yaml
+  - worker.yaml
+  - loadgen.yaml
+
+# Scaling configurations
+# For 1M clients: loadgen replicas = 10
+# For 5M clients: loadgen replicas = 50
+
+# To override for different scales:
+# kubectl kustomize k8s/ | kubectl apply -f -
+# kubectl scale deployment loadgen -n mqtt-bench --replicas=50

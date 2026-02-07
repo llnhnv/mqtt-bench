@@ -1,0 +1,215 @@
+# =============================================================================
+# PRODUCTION ARCHITECTURE - MQTT High-Performance System
+# =============================================================================
+# This configuration demonstrates a production-ready architecture capable of
+# handling millions of clients with optimized resource usage.
+#
+# Usage:
+#   # Single node (development/testing)
+#   docker-compose -f docker-compose.production.yml up
+#
+#   # Scale workers
+#   docker-compose -f docker-compose.production.yml up --scale worker-v2=3
+#
+#   # Scale loadgen for higher client count
+#   VIRTUAL_CLIENTS=1000000 docker-compose -f docker-compose.production.yml up --scale loadgen-v2=5
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # EMQX BROKER - High-performance MQTT broker
+  # ===========================================================================
+  emqx:
+    image: emqx/emqx:5.3
+    container_name: emqx
+    ports:
+      - "1883:1883"       # MQTT
+      - "8083:8083"       # WebSocket
+      - "18083:18083"     # Dashboard
+    environment:
+      # Logging
+      - EMQX_LOG__CONSOLE__LEVEL=warning
+
+      # Listener optimization
+      - EMQX_LISTENERS__TCP__DEFAULT__ACCEPTORS=64
+      - EMQX_LISTENERS__TCP__DEFAULT__MAX_CONNECTIONS=1000000
+      - EMQX_LISTENERS__TCP__DEFAULT__PROXY_PROTOCOL=false
+
+      # TCP tuning for stability
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__BACKLOG=4096
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__SEND_TIMEOUT=30s
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__SEND_TIMEOUT_CLOSE=true
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__RECBUF=4KB
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__SNDBUF=4KB
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__BUFFER=4KB
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__HIGH_WATERMARK=1MB
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__NODELAY=true
+      - EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__REUSEADDR=true
+
+      # MQTT settings
+      - EMQX_MQTT__MAX_PACKET_SIZE=1MB
+      - EMQX_MQTT__MAX_CLIENTID_LEN=65535
+      - EMQX_MQTT__MAX_TOPIC_LEVELS=128
+      - EMQX_MQTT__MAX_QOS_ALLOWED=2
+      - EMQX_MQTT__MAX_TOPIC_ALIAS=65535
+      - EMQX_MQTT__RETAIN_AVAILABLE=true
+      - EMQX_MQTT__SHARED_SUBSCRIPTION=true
+      - EMQX_MQTT__WILDCARD_SUBSCRIPTION=true
+      - EMQX_MQTT__IDLE_TIMEOUT=120s
+      - EMQX_MQTT__KEEPALIVE_MULTIPLIER=1.5
+
+      # Session
+      - EMQX_MQTT__SESSION_EXPIRY_INTERVAL=2h
+      - EMQX_MQTT__MAX_INFLIGHT=128
+      - EMQX_MQTT__MAX_AWAITING_REL=200
+      - EMQX_MQTT__MAX_MQUEUE_LEN=10000
+
+      # Force shutdown - increase limits for high throughput
+      - EMQX_FORCE_SHUTDOWN__ENABLE=true
+      - EMQX_FORCE_SHUTDOWN__MAX_HEAP_SIZE=1GB
+      - EMQX_FORCE_SHUTDOWN__MAX_MESSAGE_QUEUE_LEN=100000
+
+      # Overload protection - less aggressive
+      - EMQX_OVERLOAD_PROTECTION__ENABLE=false
+
+      # Flow control for subscribers
+      - EMQX_CONN_CONGESTION__ENABLE_ALARM=false
+      - EMQX_FLAPPING_DETECT__ENABLE=false
+
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ===========================================================================
+  # WORKER-V2 - Auto-scaling message processor
+  # ===========================================================================
+  worker-v2:
+    build: ./worker-v2
+    depends_on:
+      emqx:
+        condition: service_healthy
+    environment:
+      - MQTT_BROKER=tcp://emqx:1883
+      - MQTT_SUB=req/+    # Subscribe to all request topics
+      - MQTT_QOS=0
+      - PUB_QOS=0
+
+      # Connection pool for publishing
+      - CONNECTIONS=${WORKER_CONNECTIONS:-10}
+
+      # Auto-scaling worker pool
+      - MIN_WORKERS=${MIN_WORKERS:-10}
+      - MAX_WORKERS=${MAX_WORKERS:-500}
+      - QUEUE_CAP=${QUEUE_CAP:-100000}
+
+      # Scale triggers
+      - SCALE_UP_THRESHOLD=0.7
+      - SCALE_DOWN_THRESHOLD=0.2
+      - SCALE_INTERVAL_MS=500
+      - WORKERS_PER_SCALE=20
+
+      # Processing mode
+      - MODE=${MODE:-health}
+      - SLEEP_MS=${SLEEP_MS:-0}
+      - CPU_WORK=${CPU_WORK:-0}
+
+      # Backpressure
+      - DROP_ON_FULL=true
+
+      # Observability
+      - METRICS_PORT=8080
+      - PPROF_PORT=6060
+    ports:
+      - "8080-8089:8080"
+      - "6060-6069:6060"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # ===========================================================================
+  # LOADGEN-V2 - High-performance client simulator
+  # ===========================================================================
+  loadgen-v2:
+    build: ./loadgen-v2
+    depends_on:
+      emqx:
+        condition: service_healthy
+      worker-v2:
+        condition: service_started
+    environment:
+      - BROKER=tcp://emqx:1883
+
+      # Virtual clients (1M default, can scale to 5M+ with multiple instances)
+      - VIRTUAL_CLIENTS=${VIRTUAL_CLIENTS:-100000}
+
+      # Actual connections (multiplexing ratio)
+      - CONNECTIONS=${LOADGEN_CONNECTIONS:-100}
+
+      # Topic sharding
+      - SHARDS=${SHARDS:-256}
+
+      # Message timing
+      - INTERVAL_MS=${INTERVAL_MS:-2000}
+      - MAX_INFLIGHT_PER_CLIENT=1
+
+      # QoS
+      - REQ_QOS=0
+      - RESP_QOS=0
+
+      # Performance tuning
+      - PUBLISH_WORKERS=${PUBLISH_WORKERS:-20}
+      - BATCH_SIZE=${BATCH_SIZE:-500}
+      - USE_SHARED_SUB=true
+
+      # Duration
+      - WARMUP_SEC=10
+      - DURATION_SEC=${DURATION_SEC:-0}
+
+      - METRICS_PORT=8090
+    ports:
+      - "8090-8099:8090"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # ===========================================================================
+  # PROMETHEUS - Metrics collection (optional)
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=1d'
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # GRAFANA - Visualization (optional)
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    profiles:
+      - monitoring

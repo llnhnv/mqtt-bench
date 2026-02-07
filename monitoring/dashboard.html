@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT Benchmark Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+        }
+        .header h1 { font-size: 2rem; margin-bottom: 5px; }
+        .header .subtitle { opacity: 0.8; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .metric:last-child { border-bottom: none; }
+        .metric-label { color: #888; }
+        .metric-value { font-weight: bold; font-family: monospace; font-size: 1.1rem; }
+        .metric-value.green { color: #4ade80; }
+        .metric-value.yellow { color: #facc15; }
+        .metric-value.red { color: #f87171; }
+        .chart-container {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status.online { background: #4ade80; }
+        .status.offline { background: #f87171; }
+        .big-number { font-size: 2.5rem; font-weight: bold; }
+        .refresh-info { text-align: center; color: #666; margin-top: 20px; font-size: 0.8rem; }
+        #error-banner {
+            background: #f87171;
+            color: #1a1a2e;
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>MQTT Benchmark Dashboard</h1>
+        <div class="subtitle">Real-time monitoring for virtual client architecture</div>
+    </div>
+
+    <div id="error-banner"></div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Loadgen Status</h3>
+            <div class="metric">
+                <span class="metric-label"><span class="status" id="loadgen-status"></span>Status</span>
+                <span class="metric-value" id="loadgen-status-text">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Virtual Clients</span>
+                <span class="metric-value green" id="active-clients">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Connections</span>
+                <span class="metric-value" id="active-conns">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Sent / sec</span>
+                <span class="metric-value green" id="sent-rate">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Received / sec</span>
+                <span class="metric-value green" id="recv-rate">-</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Message Stats</h3>
+            <div class="metric">
+                <span class="metric-label">Total Sent</span>
+                <span class="metric-value" id="sent-total">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Total Matched</span>
+                <span class="metric-value green" id="recv-match">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Match Rate</span>
+                <span class="metric-value green" id="match-rate">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Errors</span>
+                <span class="metric-value red" id="errors">-</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Latency (μs)</h3>
+            <div class="metric">
+                <span class="metric-label">p50</span>
+                <span class="metric-value green" id="lat-p50">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">p95</span>
+                <span class="metric-value yellow" id="lat-p95">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">p99</span>
+                <span class="metric-value yellow" id="lat-p99">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">p99.9</span>
+                <span class="metric-value" id="lat-p999">-</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Worker Status</h3>
+            <div class="metric">
+                <span class="metric-label"><span class="status" id="worker-status"></span>Status</span>
+                <span class="metric-value" id="worker-status-text">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Active Workers</span>
+                <span class="metric-value green" id="worker-count">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Queue Size</span>
+                <span class="metric-value" id="queue-size">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Processed</span>
+                <span class="metric-value" id="processed">-</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Dropped</span>
+                <span class="metric-value red" id="dropped">-</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="throughputChart" height="100"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="latencyChart" height="100"></canvas>
+    </div>
+
+    <div class="refresh-info">
+        Auto-refresh every 2 seconds | Last update: <span id="last-update">-</span>
+    </div>
+
+    <script>
+        const LOADGEN_URL = 'http://localhost:8090/debug/vars';
+        const WORKER_URL = 'http://localhost:8080/stats';
+
+        let throughputData = { sent: [], recv: [], labels: [] };
+        let latencyData = { p50: [], p95: [], p99: [], labels: [] };
+        const MAX_POINTS = 60;
+
+        let prevSent = 0, prevRecv = 0, prevTime = Date.now();
+
+        const throughputChart = new Chart(document.getElementById('throughputChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Sent/s', data: [], borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)', fill: true, tension: 0.3 },
+                    { label: 'Recv/s', data: [], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.1)', fill: true, tension: 0.3 }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Throughput (msg/s)', color: '#888' } },
+                scales: {
+                    x: { display: false },
+                    y: { beginAtZero: true, grid: { color: '#2a2a4a' }, ticks: { color: '#888' } }
+                }
+            }
+        });
+
+        const latencyChart = new Chart(document.getElementById('latencyChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'p50', data: [], borderColor: '#4ade80', tension: 0.3 },
+                    { label: 'p95', data: [], borderColor: '#facc15', tension: 0.3 },
+                    { label: 'p99', data: [], borderColor: '#f87171', tension: 0.3 }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Latency (ms)', color: '#888' } },
+                scales: {
+                    x: { display: false },
+                    y: { beginAtZero: true, grid: { color: '#2a2a4a' }, ticks: { color: '#888' } }
+                }
+            }
+        });
+
+        function formatNumber(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        async function fetchLoadgen() {
+            try {
+                const res = await fetch(LOADGEN_URL);
+                const data = await res.json();
+
+                document.getElementById('loadgen-status').className = 'status online';
+                document.getElementById('loadgen-status-text').textContent = 'Online';
+
+                document.getElementById('active-clients').textContent = formatNumber(data.active_clients || 0);
+                document.getElementById('active-conns').textContent = data.active_connections || 0;
+                document.getElementById('sent-total').textContent = formatNumber(data.sent_total || 0);
+                document.getElementById('recv-match').textContent = formatNumber(data.recv_match_total || 0);
+                document.getElementById('errors').textContent = data.pub_err_total || 0;
+
+                // Calculate rates
+                const now = Date.now();
+                const dt = (now - prevTime) / 1000;
+                const sentRate = Math.round((data.sent_total - prevSent) / dt);
+                const recvRate = Math.round((data.recv_match_total - prevRecv) / dt);
+                prevSent = data.sent_total;
+                prevRecv = data.recv_match_total;
+                prevTime = now;
+
+                document.getElementById('sent-rate').textContent = formatNumber(sentRate);
+                document.getElementById('recv-rate').textContent = formatNumber(recvRate);
+
+                // Match rate
+                const matchRate = data.sent_total > 0 ? ((data.recv_match_total / data.sent_total) * 100).toFixed(1) : 0;
+                document.getElementById('match-rate').textContent = matchRate + '%';
+                document.getElementById('match-rate').className = 'metric-value ' + (matchRate > 90 ? 'green' : matchRate > 70 ? 'yellow' : 'red');
+
+                // Latency (convert μs to ms for display)
+                const p50 = (data.lat_p50_us || 0) / 1000;
+                const p95 = (data.lat_p95_us || 0) / 1000;
+                const p99 = (data.lat_p99_us || 0) / 1000;
+                const p999 = (data.lat_p999_us || 0) / 1000;
+
+                document.getElementById('lat-p50').textContent = p50.toFixed(1) + 'ms';
+                document.getElementById('lat-p95').textContent = p95.toFixed(1) + 'ms';
+                document.getElementById('lat-p99').textContent = p99.toFixed(1) + 'ms';
+                document.getElementById('lat-p999').textContent = p999.toFixed(1) + 'ms';
+
+                // Update charts
+                const label = new Date().toLocaleTimeString();
+
+                throughputData.sent.push(sentRate);
+                throughputData.recv.push(recvRate);
+                throughputData.labels.push(label);
+                if (throughputData.sent.length > MAX_POINTS) {
+                    throughputData.sent.shift();
+                    throughputData.recv.shift();
+                    throughputData.labels.shift();
+                }
+
+                latencyData.p50.push(p50);
+                latencyData.p95.push(p95);
+                latencyData.p99.push(p99);
+                latencyData.labels.push(label);
+                if (latencyData.p50.length > MAX_POINTS) {
+                    latencyData.p50.shift();
+                    latencyData.p95.shift();
+                    latencyData.p99.shift();
+                    latencyData.labels.shift();
+                }
+
+                throughputChart.data.labels = throughputData.labels;
+                throughputChart.data.datasets[0].data = throughputData.sent;
+                throughputChart.data.datasets[1].data = throughputData.recv;
+                throughputChart.update('none');
+
+                latencyChart.data.labels = latencyData.labels;
+                latencyChart.data.datasets[0].data = latencyData.p50;
+                latencyChart.data.datasets[1].data = latencyData.p95;
+                latencyChart.data.datasets[2].data = latencyData.p99;
+                latencyChart.update('none');
+
+            } catch (e) {
+                document.getElementById('loadgen-status').className = 'status offline';
+                document.getElementById('loadgen-status-text').textContent = 'Offline';
+            }
+        }
+
+        async function fetchWorker() {
+            try {
+                const res = await fetch(WORKER_URL);
+                const data = await res.json();
+
+                document.getElementById('worker-status').className = 'status online';
+                document.getElementById('worker-status-text').textContent = 'Online';
+                document.getElementById('worker-count').textContent = data.active_workers || data.current_workers || 0;
+                document.getElementById('queue-size').textContent = formatNumber(data.queue_size || 0);
+                document.getElementById('processed').textContent = formatNumber(data.msg_processed || 0);
+                document.getElementById('dropped').textContent = data.msg_dropped || 0;
+
+            } catch (e) {
+                document.getElementById('worker-status').className = 'status offline';
+                document.getElementById('worker-status-text').textContent = 'Offline';
+            }
+        }
+
+        async function refresh() {
+            await Promise.all([fetchLoadgen(), fetchWorker()]);
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        }
+
+        refresh();
+        setInterval(refresh, 2000);
+    </script>
+</body>
+</html>
