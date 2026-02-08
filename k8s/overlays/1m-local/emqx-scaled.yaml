@@ -1,0 +1,70 @@
+# EMQX single node configuration optimized for 1M clients
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emqx
+  namespace: mqtt-bench
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: emqx
+  template:
+    metadata:
+      labels:
+        app: emqx
+    spec:
+      containers:
+        - name: emqx
+          image: emqx/emqx:5.3.0
+          ports:
+            - containerPort: 1883
+              name: mqtt
+            - containerPort: 18083
+              name: dashboard
+          env:
+            # Tăng giới hạn connections
+            - name: EMQX_LISTENER__TCP__EXTERNAL__MAX_CONNECTIONS
+              value: "2000000"
+            - name: EMQX_MQTT__MAX_PACKET_SIZE
+              value: "10MB"
+            - name: EMQX_MQTT__MAX_CLIENTID_LEN
+              value: "256"
+            - name: EMQX_MQTT__MAX_TOPIC_ALIAS
+              value: "65535"
+            # Tăng message queue
+            - name: EMQX_MQTT__MQUEUE_STORE_QOS0
+              value: "true"
+            - name: EMQX_MQTT__MAX_MQUEUE_LEN
+              value: "100000"
+            - name: EMQX_MQTT__MAX_INFLIGHT
+              value: "100"
+            # Shared subscription
+            - name: EMQX_MQTT__SHARED_SUBSCRIPTION
+              value: "true"
+            - name: EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY
+              value: "round_robin"
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "2000m"
+            limits:
+              memory: "4Gi"
+              cpu: "4000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: emqx
+  namespace: mqtt-bench
+spec:
+  selector:
+    app: emqx
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: 1883
+    - name: dashboard
+      port: 18083
+      targetPort: 18083
+  type: ClusterIP

@@ -1,0 +1,64 @@
+# Worker configuration scaled for 1M clients
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: mqtt-bench
+spec:
+  replicas: 10  # Tăng số worker để xử lý 1M
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: mqtt-rr-bench-worker-v2:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MQTT_BROKER
+              value: "tcp://emqx.mqtt-bench.svc.cluster.local:1883"
+            - name: MQTT_SUB
+              value: "req/+"
+            - name: CONNECTIONS
+              value: "10"
+            - name: MIN_WORKERS
+              value: "50"
+            - name: MAX_WORKERS
+              value: "2000"
+            - name: QUEUE_CAP
+              value: "200000"
+            - name: SCALE_UP_THRESHOLD
+              value: "0.7"
+            - name: SCALE_DOWN_THRESHOLD
+              value: "0.2"
+            - name: MODE
+              value: "health"
+            - name: DROP_ON_FULL
+              value: "true"
+          ports:
+            - containerPort: 8080
+              name: metrics
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "1000m"
+            limits:
+              memory: "1Gi"
+              cpu: "2000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: mqtt-bench
+spec:
+  selector:
+    app: worker
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080

@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: mqtt-bench
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      # Scrape Loadgen metrics using endpoints
+      - job_name: 'loadgen'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - mqtt-bench
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: loadgen
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Scrape Worker metrics using endpoints
+      - job_name: 'worker'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - mqtt-bench
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: worker
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Scrape EMQX metrics
+      - job_name: 'emqx'
+        static_configs:
+          - targets: ['emqx:18083']
+        metrics_path: '/api/v5/prometheus/stats'

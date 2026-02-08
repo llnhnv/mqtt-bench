@@ -1,0 +1,82 @@
+{
+  "title": "MQTT Benchmark - Simple",
+  "uid": "mqtt-simple",
+  "version": 0,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Loadgen Pods Running",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "count(up{job=\"loadgen\"} == 1)"}],
+      "options": {
+        "colorMode": "background",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [{"color": "green", "value": null}]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Worker Pods Running",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "count(up{job=\"worker\"} == 1)"}],
+      "options": {
+        "colorMode": "background",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [{"color": "yellow", "value": null}]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "EMQX Status",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "up{job=\"emqx\"}"}],
+      "options": {
+        "colorMode": "background",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "green", "value": 1}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory Usage",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+      "targets": [
+        {
+          "expr": "go_memstats_alloc_bytes{job=~\"loadgen|worker\"}/1024/1024",
+          "legendFormat": "{{job}} - {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MiB"
+        }
+      }
+    }
+  ]
+}

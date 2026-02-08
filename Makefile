@@ -34,6 +34,12 @@ help:
 	@echo "  make benchmark             Run full benchmark suite"
 	@echo "  make benchmark-quick       Run quick benchmark"
 	@echo ""
+	@echo "Local K8s (1M/3M):"
+	@echo "  make k8s-local-build       Build and load images to Kind"
+	@echo "  make k8s-local-1m          Deploy 1M clients on local K8s"
+	@echo "  make k8s-local-3m          Deploy 3M clients on local K8s"
+	@echo "  make k8s-local-monitor     Show K8s deployment status"
+	@echo ""
 	@echo "Other:"
 	@echo "  make build                 Build all containers"
 	@echo "  make logs                  Follow container logs"
@@ -172,3 +178,69 @@ k8s-dashboard:
 
 k8s-cleanup:
 	@./k8s/deploy.sh cleanup
+
+# =============================================================================
+# LOCAL K8S DEPLOYMENT (1M and 3M clients on Kind)
+# =============================================================================
+
+k8s-local-1m:
+	@echo "Deploying 1M virtual clients on local Kind cluster..."
+	@kubectl apply -f k8s/namespace.yaml
+	@kubectl apply -f k8s/overlays/1m-local/emqx-scaled.yaml
+	@echo "Waiting for EMQX..."
+	@kubectl wait --for=condition=available deployment/emqx -n mqtt-bench --timeout=120s
+	@kubectl apply -f k8s/overlays/1m-local/worker-scaled.yaml
+	@echo "Waiting for Workers..."
+	@kubectl wait --for=condition=available deployment/worker -n mqtt-bench --timeout=120s
+	@kubectl apply -f k8s/overlays/1m-local/loadgen-1m.yaml
+	@echo ""
+	@echo "1M clients deployment started!"
+	@echo "Resources: ~20GB RAM, Loadgen: 10 pods, Workers: 10 pods"
+	@echo ""
+	@echo "Monitor: kubectl get pods -n mqtt-bench -w"
+	@echo "Logs: kubectl logs -n mqtt-bench -l app=loadgen --tail=50 -f"
+	@echo "Dashboard: kubectl port-forward -n mqtt-bench svc/emqx 18083:18083"
+
+k8s-local-3m:
+	@echo "Deploying 3M virtual clients on local Kind cluster..."
+	@kubectl apply -f k8s/namespace.yaml
+	@kubectl apply -f k8s/overlays/3m-local/emqx-scaled.yaml
+	@echo "Waiting for EMQX..."
+	@kubectl wait --for=condition=available deployment/emqx -n mqtt-bench --timeout=120s
+	@kubectl apply -f k8s/overlays/3m-local/worker-scaled.yaml
+	@echo "Waiting for Workers..."
+	@kubectl wait --for=condition=available deployment/worker -n mqtt-bench --timeout=120s
+	@kubectl apply -f k8s/overlays/3m-local/loadgen-3m.yaml
+	@echo ""
+	@echo "3M clients deployment started!"
+	@echo "Resources: ~44GB RAM, Loadgen: 30 pods, Workers: 20 pods"
+	@echo ""
+	@echo "Monitor: kubectl get pods -n mqtt-bench -w"
+	@echo "Logs: kubectl logs -n mqtt-bench -l app=loadgen --tail=50 -f"
+	@echo "Dashboard: kubectl port-forward -n mqtt-bench svc/emqx 18083:18083"
+
+k8s-local-build:
+	@echo "Building and loading images to Kind cluster..."
+	docker build -t mqtt-rr-bench-loadgen-v2:latest -f loadgen-v2/Dockerfile loadgen-v2/
+	docker build -t mqtt-rr-bench-worker-v2:latest -f worker-v2/Dockerfile worker-v2/
+	@CLUSTER=$$(kind get clusters 2>/dev/null | head -1); \
+	if [ -n "$$CLUSTER" ]; then \
+		echo "Loading images into Kind cluster: $$CLUSTER"; \
+		kind load docker-image mqtt-rr-bench-loadgen-v2:latest --name $$CLUSTER; \
+		kind load docker-image mqtt-rr-bench-worker-v2:latest --name $$CLUSTER; \
+	else \
+		echo "No Kind cluster found. Create one with: kind create cluster --name mqtt-bench"; \
+		exit 1; \
+	fi
+
+k8s-local-monitor:
+	@echo "=== MQTT Bench Status ==="
+	@echo ""
+	@echo "Pods:"
+	@kubectl get pods -n mqtt-bench
+	@echo ""
+	@echo "Resource Usage:"
+	@kubectl top pods -n mqtt-bench 2>/dev/null || echo "Metrics server not available"
+	@echo ""
+	@echo "Services:"
+	@kubectl get svc -n mqtt-bench
